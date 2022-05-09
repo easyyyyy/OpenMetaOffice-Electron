@@ -458,7 +458,7 @@ const CveFooter: FC<CveFooterProps> = ({ sendMsg, curCve }) => {
             onKeyDown={keyDown}
             onPaste={textInit}
           />
-          <ReplyPrefix />
+          {/* <ReplyPrefix /> */}
           <MsgTypeSuffix ref={suffixRef} choseCard={choseCard} faceClick={faceClick} sendMsg={sendMsg} />
         </div>
       )}

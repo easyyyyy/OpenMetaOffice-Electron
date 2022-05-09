@@ -14,6 +14,7 @@ import { useTranslation } from "react-i18next";
 import { ConversationItem, GroupItem } from "../../../utils/open_im_sdk/types";
 import { useUpdateEffect } from "ahooks";
 import { APPLICATIONTYPEUPDATE } from "../../../constants/events";
+import { VIDEOINVITE } from "../../../constants/events"
 
 const { Header } = Layout;
 
@@ -151,7 +152,7 @@ const HomeHeader: FC<HeaderProps> = ({ isShowBt, type, title, curCve, typing, gi
           <AudioOutlined onClick={voiceCall} />
         </Tooltip>
         <Tooltip placement="right" title={t("VideoCall")}>
-          <PlayCircleOutlined onClick={videoCall} />
+          <PlayCircleOutlined onClick={() => {events.emit(VIDEOINVITE, curCve?.userID)}} />
         </Tooltip>
       </div>
     </div>

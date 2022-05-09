@@ -220,11 +220,11 @@ const Login = () => {
       <div className="login_wapper">
         <div className="center_container">
           <div className="left_container">
-            <div onDoubleClick={() => setIsModalVisible(true)} className="title">
+            {/* <div onDoubleClick={() => setIsModalVisible(true)} className="title">
               {t("LoginTitle")}
             </div>
             <span className="sub_title">{t("LoginSubTitle")}</span>
-            <img src={login_bg} />
+            <img src={login_bg} /> */}
           </div>
           <LoginForm loading={loading} num={num} type={lastType.current} finish={finish} getCodeAgain={getCodeAgain} back={back} />
         </div>

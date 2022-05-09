@@ -1,5 +1,5 @@
 import { Button, Image, Layout, message, Modal } from "antd";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback, MutableRefObject } from "react";
 import { shallowEqual, useDispatch, useSelector } from "react-redux";
 import { RootState } from "../../../store";
 import CveList from "./CveList/CveList";
@@ -13,7 +13,7 @@ import home_bg from "@/assets/images/home_bg.png";
 import { messageTypes, notOssMessageTypes, SessionType, tipsTypes } from "../../../constants/messageContentType";
 import { useReactive, useRequest } from "ahooks";
 import { CbEvents } from "../../../utils/open_im_sdk";
-import { DELETEMESSAGE, ISSETDRAFT, MERMSGMODAL, MUTILMSG, OPENGROUPMODAL, RESETCVE, REVOKEMSG, SENDFORWARDMSG, TOASSIGNCVE, UPDATEFRIENDCARD } from "../../../constants/events";
+import { DELETEMESSAGE, ISSETDRAFT, MERMSGMODAL, MUTILMSG, OPENGROUPMODAL, RESETCVE, REVOKEMSG, SENDFORWARDMSG, TOASSIGNCVE, UPDATEFRIENDCARD, VIDEOINVITE } from "../../../constants/events";
 import { animateScroll } from "react-scroll";
 import MerModal from "./components/MerModal";
 import { SelectType } from "../components/MultipleSelectBox";
@@ -21,6 +21,11 @@ import { getGroupInfo, getGroupMemberList, setGroupMemberList } from "../../../s
 import { ConversationItem, FriendItem, GroupItem, GroupMemberItem, MergeElem, MergerMsgParams, MessageItem, PictureElem, WsResponse } from "../../../utils/open_im_sdk/types";
 import { useTranslation } from "react-i18next";
 import { setCurCve } from "../../../store/actions/cve";
+import { CustomMsgParams } from "../../../utils/open_im_sdk/types"
+import VideoInviteModal from "./components/VideoInviteModal";
+import VideoInvitedModal from "./components/VideoInvitedModal";
+import VideoModal from "./components/VideoModal";
+import AdapterJS from "adapterjs"
 
 const { Content } = Layout;
 
@@ -37,12 +42,12 @@ const WelcomeContent = () => {
   };
   return (
     <div className="content_bg">
-      <div className="content_bg_title">{t("CreateGroup")}</div>
+      {/* <div className="content_bg_title">{t("CreateGroup")}</div>
       <div className="content_bg_sub">{t("CreateGroupTip")}</div>
       <img src={home_bg} alt="" />
       <Button onClick={createGroup} className="content_bg_btn" type="primary">
         {t("CreateNow")}
-      </Button>
+      </Button> */}
     </div>
   );
 };
@@ -55,6 +60,11 @@ type ReactiveState = {
   merData: (MergeElem & { sender: string }) | undefined;
   searchStatus: boolean;
   searchCve: ConversationItem[];
+  videoInviteVisable: boolean;
+  videoInvitedVisable: boolean;
+  videoInvitedData: any;
+  videoVisable: boolean;
+  videoData: any;
 };
 
 const Home = () => {
@@ -76,6 +86,11 @@ const Home = () => {
     merData: undefined,
     searchStatus: false,
     searchCve: [],
+    videoInviteVisable: false,
+    videoInvitedVisable: false,
+    videoInvitedData: undefined,
+    videoVisable: false,
+    videoData: undefined
   });
   const timer = useRef<NodeJS.Timeout | null>(null);
   const {
@@ -89,6 +104,34 @@ const Home = () => {
   });
   const { t } = useTranslation();
   let nMsgMaps: NMsgMap[] = [];
+  const localVideoRef: MutableRefObject<HTMLVideoElement | null> = useRef(null)
+  const remoteVideoRef: MutableRefObject<HTMLVideoElement | null> = useRef(null)
+  const pcRef: MutableRefObject<RTCPeerConnection | null> = useRef(null)
+  const videoDataRef: MutableRefObject<any> = useRef(null)
+
+  const mediaStreamConstraints = {
+    // video: { facingMode: { exact: 'environment' }, width: { ideal: 1080 }, height: { ideal: 1920 } }, // 开启手机后置摄像头
+    video: true,
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true
+    }
+  }
+  const pcConfig: RTCConfiguration = {
+    iceServers: [
+      {
+        'urls': 'turn:124.222.64.28:3478',
+        'username': 'kurento',
+        'credential': 'kurento'
+      }
+    ]
+  }
+
+  const offerOptions: RTCOfferOptions = {
+    offerToReceiveVideo: true,
+    offerToReceiveAudio: true
+  }
 
   useEffect(() => {
     getNotification();
@@ -111,6 +154,7 @@ const Home = () => {
     events.on(DELETEMESSAGE, deleteMsg);
     events.on(REVOKEMSG, revokeMyMsgHandler);
     events.on(MERMSGMODAL, merModalHandler);
+    events.on(VIDEOINVITE, setVideoInvite)
     window.electron && window.electron.addIpcRendererListener("DownloadFinish", downloadFinishHandler, "downloadListener");
     return () => {
       events.off(RESETCVE, resetCve);
@@ -133,6 +177,18 @@ const Home = () => {
   }, [curCve]);
 
   //  event hander
+  const setVideoInvite = async (uid: string) => {
+    rs.videoInviteVisable = true
+    const CustomData: CustomMsgParams = {
+      data: JSON.stringify({
+        type: 'invite'
+      }),
+      extension: "",
+      description: "video"
+    }
+    const { data } = await im.createCustomMessage(CustomData);
+    sendMsg(data, messageTypes.CUSTOMMESSAGE, uid, "")
+  }
 
   const merModalHandler = (el: MergeElem, sender: string) => {
     rs.merData = { ...el, sender };
@@ -147,8 +203,8 @@ const Home = () => {
 
   const sendForwardHandler = (options: string | MergerMsgParams, type: messageTypes, list: SelectType[]) => {
     list.map(async (s) => {
-      const uid = (s as FriendItem).userID??"";
-      const gid = (s as GroupItem).groupID??"";
+      const uid = (s as FriendItem).userID ?? "";
+      const gid = (s as GroupItem).groupID ?? "";
       let data;
       if (type === messageTypes.MERGERMESSAGE) {
         data = await im.createMergerMessage(options as MergerMsgParams);
@@ -160,8 +216,158 @@ const Home = () => {
     });
   };
 
+  // video handler
+  const videoHandler = (data: MessageItem, videoData: any) => {
+    switch (videoData?.type) {
+      case "invite":
+        rs.videoInvitedVisable = true
+        rs.videoInvitedData = {
+          sendID: data?.sendID,
+          senderNickname: data?.senderNickname,
+          senderFaceUrl: data?.senderFaceUrl,
+          isCreatedOffer: false,
+        }
+        console.log(222)
+        break
+      case "agree":
+        rs.videoInviteVisable = false
+        rs.videoVisable = true
+        videoDataRef.current = {
+          sendID: data?.sendID,
+          senderNickname: data?.senderNickname,
+          senderFaceUrl: data?.senderFaceUrl,
+          isCreatedOffer: true,
+        }
+        getUserMediaAdapter()
+        break
+      case "pc message":
+        console.log('客户端收到了pc的消息', videoData?.data)
+        signalingMessageCallback(videoData?.data)
+        break
+    }
+  }
+
+  const getUserMediaAdapter = () => {
+    AdapterJS.webRTCReady(() => {
+      /* eslint-disable */
+      // @ts-ignore
+      getUserMedia(mediaStreamConstraints, (stream) => {
+        const localVideo = localVideoRef.current
+        localVideo!.srcObject = stream
+        console.log('赋值本地流')
+        createPeerConnection(stream)
+      }, (err: any) => {
+        console.log(err)
+      })
+    })
+  }
+
+  const createPeerConnection = (stream: any) => {
+    const pc = new RTCPeerConnection(pcConfig)
+    pcRef.current = pc
+    pc.addEventListener('icecandidate', event => {
+      console.log('icecandidate event:', event)
+      if (event.candidate) {
+        sendPcMessage({
+          type: 'candidate',
+          label: event.candidate.sdpMLineIndex,
+          id: event.candidate.sdpMid,
+          candidate: event.candidate.candidate
+        })
+      } else {
+        console.log('candidates结束')
+      }
+    })
+    // pc.addEventListener('track', (event) => {
+    //   console.log('track')
+    //   handleRemoteMediaStreamAdded(event)
+    // })
+    // for (const track of stream.getTracks()) {
+    //   pc.addTrack(track);
+    // }
+    pc.addEventListener('addstream', (event) => {
+      console.log('addstream')
+      handleRemoteMediaStreamAdded(event)
+    })
+    // @ts-ignore
+    pc!.addStream(stream)
+    console.log(videoDataRef.current)
+    if(videoDataRef.current?.isCreatedOffer) {
+      pc.createOffer(offerOptions).then((description: RTCSessionDescriptionInit) => {
+        pc.setLocalDescription(description).then(() => {
+          sendPcMessage(pc.localDescription)
+          console.log('创建offer,生成本地会话描述')
+        }).catch((err) => {
+          console.log(err)
+        })
+      }).catch((err) => {
+        console.log(err)
+      })
+    }
+  }
+
+  // A和B建立连接，A和C建立连接，收到的B和C的消息需要进行区分
+  const signalingMessageCallback = (message: any) => {
+    message = message.pcMsg
+    const pc = pcRef.current
+    if(!pc) return
+    if (message.type === 'offer') {
+      console.log('signalingMessageCallback offer', message)
+      pc.setRemoteDescription(new RTCSessionDescription(message)).then(() => {
+        pc.createAnswer()
+          .then((description) => {
+            pc.setLocalDescription(description).then(() => {
+              sendPcMessage(pc.localDescription)
+            }).catch((err) => {console.log(err)})
+          })
+          .catch((err) => { console.warn(err) })
+      }).catch((err) => { console.warn(err) })
+    } else if (message.type === 'answer') {
+      console.log('收到了answer')
+      console.log('pc', pc)
+      pc.setRemoteDescription(new RTCSessionDescription(message)).catch((err) => {console.log(err)})
+    } else if (message.type === 'candidate') {
+      let candidate = new RTCIceCandidate({
+        sdpMLineIndex: message.label,
+        candidate: message.candidate
+      })
+      pc.addIceCandidate(candidate).catch(err => {
+        console.log('addIceCandidate-error', err)
+      })
+    }
+  }
+
+  const sendPcMessage = async (PcMessage: any) => {
+    const CustomData: CustomMsgParams = {
+      data: JSON.stringify({
+        type: 'pc message',
+        data: {
+          pcMsg: PcMessage
+        }
+      }),
+      extension: "",
+      description: "video"
+    }
+    const { data } = await im.createCustomMessage(CustomData);
+    sendMsg(data, messageTypes.CUSTOMMESSAGE, videoDataRef.current?.sendID, "")
+  }
+
+  const handleRemoteMediaStreamAdded = (ev: any) => {
+    const remoteVideo = remoteVideoRef.current
+    // @ts-ignore
+    remoteVideo.srcObject = ev.stream
+    // if (ev.streams && ev.streams[0]) {
+    //   remoteVideo!.srcObject = ev.streams[0];
+    // }
+  }
+
   //  im hander
   const newMsgHandler = (data: WsResponse) => {
+    const jsonData = JSON.parse(data.data)
+    console.log(jsonData)
+    if (jsonData?.customElem?.description === 'video') {
+      videoHandler(jsonData, JSON.parse(jsonData?.customElem?.data))
+    }
     const newServerMsg: MessageItem = JSON.parse(data.data);
     if (newServerMsg.contentType !== messageTypes.TYPINGMESSAGE && newServerMsg.sendID !== selfID) {
       createNotification(newServerMsg, (id, sessionType) => {
@@ -305,7 +511,7 @@ const Home = () => {
 
   const getHistoryMsg = (uid?: string, gid?: string, sMsg?: MessageItem) => {
     console.log("getMsg:::");
-    
+
     const config = {
       userID: uid ?? "",
       groupID: gid ?? "",
@@ -428,6 +634,33 @@ const Home = () => {
     }
   };
 
+  const handlerVideoInviteCancle = () => {
+    rs.videoInviteVisable = false
+  }
+
+  const handlerVideoInvitedAccept = async (videoInvitedData: any) => {
+    rs.videoInvitedVisable = false
+    rs.videoVisable = true
+    getUserMediaAdapter()
+    const CustomData: CustomMsgParams = {
+      data: JSON.stringify({
+        type: 'agree'
+      }),
+      extension: "",
+      description: "video"
+    }
+    const { data } = await im.createCustomMessage(CustomData);
+    sendMsg(data, messageTypes.CUSTOMMESSAGE, videoInvitedData?.sendID, "")
+  }
+
+  const handlerVideoInvitedReject = () => {
+    rs.videoInvitedVisable = false
+  }
+
+  const handlerVideoCancle = () => {
+    rs.videoVisable = false
+  }
+
   return (
     <>
       <HomeSider searchCb={siderSearch}>
@@ -460,7 +693,10 @@ const Home = () => {
 
         {curCve && <CveFooter curCve={curCve} sendMsg={sendMsg} />}
       </Layout>
-      {curCve && <CveRightBar curCve={curCve} />}
+      {/* {curCve && <CveRightBar curCve={curCve} />} */}
+      {rs.videoInviteVisable && curCve && <VideoInviteModal cancle={handlerVideoInviteCancle} visible={rs.videoInviteVisable} curCve={curCve}></VideoInviteModal>}
+      {rs.videoInvitedVisable && rs.videoInvitedData && <VideoInvitedModal reject={handlerVideoInvitedReject} accept={handlerVideoInvitedAccept} visible={rs.videoInvitedVisable} videoInvitedData={rs.videoInvitedData}></VideoInvitedModal>}
+      {rs.videoVisable && <VideoModal cancle={handlerVideoCancle} visible={rs.videoVisable} localVideoRef={localVideoRef} remoteVideoRef={remoteVideoRef}></VideoModal>}
     </>
   );
 };

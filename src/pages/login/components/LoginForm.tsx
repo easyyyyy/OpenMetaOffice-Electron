@@ -116,7 +116,7 @@ const LoginForm: FC<IProps> = (props) => {
 
   const loginAndRegisterForm = (
     <>
-      <div className="form_title">{type === "modifySend" ? t("MissPwd") : t("LoginFormTitle")}</div>
+      {/* <div className="form_title">{type === "modifySend" ? t("MissPwd") : t("LoginFormTitle")}</div> */}
       <Form onFinish={comfirmEnter} layout="vertical" initialValues={initialValues}>
         <Form.Item className="no_mb" label={t("PhoneNumber")}>
           <Input.Group compact>
@@ -257,15 +257,15 @@ const LoginForm: FC<IProps> = (props) => {
 
   const bottomAccess = (
     <div>
-      <Checkbox checked={checkSts} defaultChecked={checkSts} onChange={() => toggleCheck()}>
+      {/* <Checkbox checked={checkSts} defaultChecked={checkSts} onChange={() => toggleCheck()}>
         {t("LoginNotice")}
         <span className="primary">{` ${t("UserAgreement")} `}</span>
         {t("And")}
         <span className="primary">{` ${t("PrivacyAgreement")} `}</span>
-      </Checkbox>
+      </Checkbox> */}
       {type === "login" ? (
         <div className="access_bottom">
-          <span onClick={() => finish("modifySend")}>{t("MissPwd")}</span>
+          {/* <span onClick={() => finish("modifySend")}>{t("MissPwd")}</span> */}
           <span onClick={() => finish("register")}>{t("RegisterNow")}</span>
         </div>
       ) : null}
