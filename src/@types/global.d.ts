@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { API, APIKey } from "./api";
 
 declare global {
@@ -9,4 +10,6 @@ declare global {
 		urlClick: (id: string) => void;
 	}
 	interface Window extends Record<APIKey,API>{}
+
+	const JitsiMeetJS = any
 }

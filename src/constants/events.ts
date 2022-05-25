@@ -19,3 +19,4 @@ export const CLEARSEARCHINPUT = "CLEARSEARCHINPUT"
 
 // webrtc events
 export const VIDEOINVITE = "VIDEOINVITE"
+export const GROUPVIDEO = "GROUPVIDEO"

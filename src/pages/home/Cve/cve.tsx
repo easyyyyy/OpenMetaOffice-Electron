@@ -1,3 +1,5 @@
+/* eslint-disable */
+// @ts-ignore
 import { Button, Image, Layout, message, Modal } from "antd";
 import { useEffect, useRef, useState, useCallback, MutableRefObject } from "react";
 import { shallowEqual, useDispatch, useSelector } from "react-redux";
@@ -13,7 +15,7 @@ import home_bg from "@/assets/images/home_bg.png";
 import { messageTypes, notOssMessageTypes, SessionType, tipsTypes } from "../../../constants/messageContentType";
 import { useReactive, useRequest } from "ahooks";
 import { CbEvents } from "../../../utils/open_im_sdk";
-import { DELETEMESSAGE, ISSETDRAFT, MERMSGMODAL, MUTILMSG, OPENGROUPMODAL, RESETCVE, REVOKEMSG, SENDFORWARDMSG, TOASSIGNCVE, UPDATEFRIENDCARD, VIDEOINVITE } from "../../../constants/events";
+import { DELETEMESSAGE, ISSETDRAFT, MERMSGMODAL, MUTILMSG, OPENGROUPMODAL, RESETCVE, REVOKEMSG, SENDFORWARDMSG, TOASSIGNCVE, UPDATEFRIENDCARD, VIDEOINVITE, GROUPVIDEO } from "../../../constants/events";
 import { animateScroll } from "react-scroll";
 import MerModal from "./components/MerModal";
 import { SelectType } from "../components/MultipleSelectBox";
@@ -25,6 +27,7 @@ import { CustomMsgParams } from "../../../utils/open_im_sdk/types"
 import VideoInviteModal from "./components/VideoInviteModal";
 import VideoInvitedModal from "./components/VideoInvitedModal";
 import VideoModal from "./components/VideoModal";
+import GroupVideoModal from "./components/GroupVideoModal";
 import AdapterJS from "adapterjs"
 
 const { Content } = Layout;
@@ -65,6 +68,7 @@ type ReactiveState = {
   videoInvitedData: any;
   videoVisable: boolean;
   videoData: any;
+  groupVideoVisable: boolean;
 };
 
 const Home = () => {
@@ -90,8 +94,11 @@ const Home = () => {
     videoInvitedVisable: false,
     videoInvitedData: undefined,
     videoVisable: false,
-    videoData: undefined
+    videoData: undefined,
+    groupVideoVisable: false,
   });
+  const [localTracks, setLocalTracks] = useState([])
+  const [remoteTracks, setRemoteTracks] = useState([])
   const timer = useRef<NodeJS.Timeout | null>(null);
   const {
     loading,
@@ -108,6 +115,10 @@ const Home = () => {
   const remoteVideoRef: MutableRefObject<HTMLVideoElement | null> = useRef(null)
   const pcRef: MutableRefObject<RTCPeerConnection | null> = useRef(null)
   const videoDataRef: MutableRefObject<any> = useRef(null)
+  const jitsiRef: MutableRefObject<any> = useRef({
+    connection: null,
+    curCve: null
+  })
 
   const mediaStreamConstraints = {
     // video: { facingMode: { exact: 'environment' }, width: { ideal: 1080 }, height: { ideal: 1920 } }, // 开启手机后置摄像头
@@ -155,6 +166,7 @@ const Home = () => {
     events.on(REVOKEMSG, revokeMyMsgHandler);
     events.on(MERMSGMODAL, merModalHandler);
     events.on(VIDEOINVITE, setVideoInvite)
+    events.on(GROUPVIDEO, setGroupVideo);
     window.electron && window.electron.addIpcRendererListener("DownloadFinish", downloadFinishHandler, "downloadListener");
     return () => {
       events.off(RESETCVE, resetCve);
@@ -177,7 +189,139 @@ const Home = () => {
   }, [curCve]);
 
   //  event hander
-  const setVideoInvite = async (uid: string) => {
+  // 群聊jitsi相关
+  const setGroupVideo = async (curCve: ConversationItem) => {
+    rs.groupVideoVisable = true
+    console.log('group')
+    const options = {
+      hosts: {
+        domain: 'meet.jitsi',
+        muc: 'muc.meet.jitsi',
+      },
+      //bosh: 'https://im.bbspace.icu/http-bind',
+      serviceUrl: 'wss://meet.im.bbspace.icu/xmpp-websocket'
+    };
+    const initOptions = {
+      disableAudioLevels: true
+    };
+    JitsiMeetJS.init(initOptions);
+    JitsiMeetJS.setLogLevel(JitsiMeetJS.logLevels.ERROR);
+    const connection = new JitsiMeetJS.JitsiConnection(null, null, options)
+    jitsiRef.current.connection = connection
+    jitsiRef.current.curCve = curCve
+    connection.addEventListener(JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED, onConnectionSuccess);
+    //connection.addEventListener(JitsiMeetJS.events.connection.CONNECTION_FAILED, onConnectionFailed);
+    //connection.addEventListener(JitsiMeetJS.events.connection.CONNECTION_DISCONNECTED, disconnect);
+    JitsiMeetJS.mediaDevices.addEventListener(JitsiMeetJS.events.mediaDevices.DEVICE_LIST_CHANGED, onDeviceListChanged);
+
+    connection.connect();
+
+    JitsiMeetJS.createLocalTracks({ devices: [ 'audio', 'video' ] })
+      .then(onLocalTracks)
+      .catch((error: any) => {
+        throw error;
+      });
+  }
+
+  const onConnectionSuccess = () => {
+    console.log('连接成功')
+    const connection = jitsiRef.current.connection
+    const curCve = jitsiRef.current.curCve
+    console.log(111, connection, curCve)
+    const room = connection.initJitsiConference(curCve.groupID, {})
+    jitsiRef.current.room = room
+    room.on(JitsiMeetJS.events.conference.TRACK_ADDED, onRemoteTrack);
+    room.on(JitsiMeetJS.events.conference.CONFERENCE_JOINED, onConferenceJoined);
+    room.on(JitsiMeetJS.events.conference.USER_LEFT, onUserLeft);
+
+    //JitsiMeetJS.createLocalTracks().then(onLocalTracks);
+
+    room.join()
+  }
+
+  const onUserLeft = (id: string) => {
+    console.log('用户离开', id)
+    setRemoteTracks((tracks: any) => {
+      const newTracks = {...tracks}
+      newTracks[id] = null
+      return newTracks
+    })
+  }
+
+  const onLeave = () => {
+    const room = jitsiRef.current.room
+    const connection = jitsiRef.current.connection
+    room.leave()
+    const track = [...localTracks]
+    track.forEach((item, index) => {
+      // @ts-ignore
+      item?.track?.stop()
+    })
+    setLocalTracks([])
+    setRemoteTracks([])
+    connection.disconnect()
+    rs.groupVideoVisable = false
+  }
+
+  const onLocalTracks = (tracks: any) => {
+    console.log('本地流', tracks)
+    const room = jitsiRef.current.room
+    // rs.localTracks = tracks
+    // localRef.current = tracks
+    setLocalTracks(tracks)
+    for (let i = 0; i < tracks.length; i++) {
+      tracks[i].addEventListener(
+        JitsiMeetJS.events.track.TRACK_AUDIO_LEVEL_CHANGED,
+        (audioLevel: any) => console.log(`Audio Level local: ${audioLevel}`));
+      tracks[i].addEventListener(
+        JitsiMeetJS.events.track.TRACK_MUTE_CHANGED,
+        () => console.log('local track muted'));
+      tracks[i].addEventListener(
+        JitsiMeetJS.events.track.LOCAL_TRACK_STOPPED,
+        () => console.log('local track stoped'));
+      tracks[i].addEventListener(
+        JitsiMeetJS.events.track.TRACK_AUDIO_OUTPUT_CHANGED,
+        (deviceId: any) => console.log(`track audio output device was changed to ${deviceId}`));
+      room.addTrack(tracks[i]);
+    }
+  }
+
+  const onRemoteTrack = (track: any) => {
+    if (track.isLocal()) {
+      return;
+    }
+
+    const participant = track.getParticipantId();
+    setRemoteTracks((tracks) => {
+      const newTrack = tracks[participant] || {}
+      if (track.getType() == 'video') {
+        // @ts-ignore
+        newTrack['video'] = track
+      }
+      if (track.getType() == 'audio') {
+        // @ts-ignore
+        newTrack['audio'] = track
+      }
+      const newTracks = {
+        ...tracks
+      }
+      newTracks[participant] = newTrack
+      return newTracks
+    })
+    console.log('接受到远程流', track)
+  }
+
+  const onConferenceJoined = () => {
+    console.log('加入会议')
+    const room = jitsiRef.current.room
+    for (let i = 0; i < localTracks.length; i++) {
+      room.addTrack(localTracks[i]);
+    }
+  }
+
+  const onDeviceListChanged = () => {}
+
+  const setVideoInvite = async (curCve: ConversationItem) => {
     rs.videoInviteVisable = true
     const CustomData: CustomMsgParams = {
       data: JSON.stringify({
@@ -187,7 +331,7 @@ const Home = () => {
       description: "video"
     }
     const { data } = await im.createCustomMessage(CustomData);
-    sendMsg(data, messageTypes.CUSTOMMESSAGE, uid, "")
+    sendMsg(data, messageTypes.CUSTOMMESSAGE, curCve.userID, curCve.groupID)
   }
 
   const merModalHandler = (el: MergeElem, sender: string) => {
@@ -697,6 +841,7 @@ const Home = () => {
       {rs.videoInviteVisable && curCve && <VideoInviteModal cancle={handlerVideoInviteCancle} visible={rs.videoInviteVisable} curCve={curCve}></VideoInviteModal>}
       {rs.videoInvitedVisable && rs.videoInvitedData && <VideoInvitedModal reject={handlerVideoInvitedReject} accept={handlerVideoInvitedAccept} visible={rs.videoInvitedVisable} videoInvitedData={rs.videoInvitedData}></VideoInvitedModal>}
       {rs.videoVisable && <VideoModal cancle={handlerVideoCancle} visible={rs.videoVisable} localVideoRef={localVideoRef} remoteVideoRef={remoteVideoRef}></VideoModal>}
+      {rs.groupVideoVisable && <GroupVideoModal cancle={onLeave} visible={rs.groupVideoVisable} localTracks={localTracks} remoteTracks={remoteTracks}></GroupVideoModal>}
     </>
   );
 };
