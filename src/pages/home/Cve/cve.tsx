@@ -209,6 +209,8 @@ const Home = () => {
     const connection = new JitsiMeetJS.JitsiConnection(null, null, options)
     jitsiRef.current.connection = connection
     jitsiRef.current.curCve = curCve
+    jitsiRef.current.isJoined = false
+    jitsiRef.current.isAddTracks = false
     connection.addEventListener(JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED, onConnectionSuccess);
     //connection.addEventListener(JitsiMeetJS.events.connection.CONNECTION_FAILED, onConnectionFailed);
     //connection.addEventListener(JitsiMeetJS.events.connection.CONNECTION_DISCONNECTED, disconnect);
@@ -282,7 +284,11 @@ const Home = () => {
       tracks[i].addEventListener(
         JitsiMeetJS.events.track.TRACK_AUDIO_OUTPUT_CHANGED,
         (deviceId: any) => console.log(`track audio output device was changed to ${deviceId}`));
-      room.addTrack(tracks[i]);
+        try {
+          room.addTrack(tracks[i]);
+        } catch(err) {
+          console.log(err)
+        }
     }
   }
 
@@ -315,7 +321,12 @@ const Home = () => {
     console.log('加入会议')
     const room = jitsiRef.current.room
     for (let i = 0; i < localTracks.length; i++) {
-      room.addTrack(localTracks[i]);
+      jitsiRef.current.isJoined = true
+      try {
+        room.addTrack(localTracks[i]);
+      } catch(err) {
+        console.log(err)
+      }
     }
   }
 

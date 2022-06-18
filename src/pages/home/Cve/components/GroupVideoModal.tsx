@@ -85,12 +85,12 @@ const GroupVideoModal: FC<VideoInviteModalProps> = ({ cancle, visible, localTrac
                         <video src="" ref={localVideoRef} autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'contain' }}></video>
                     </div> */}
                 </div>
-                <div style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'flex' }}>
+                <div style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'flex', flexWrap: 'wrap' }}>
                     {
                         localTracks?.map((item, index) => {
                             if(item.getType() === 'video') {
                                 return (
-                                    <video autoPlay playsInline src='' id={`localVideo${index}`} key={index} style={{width: '50%', objectFit:'contain'}}></video>
+                                    <video autoPlay playsInline src='' id={`localVideo${index}`} key={index} style={{maxWidth: '50%', maxHeight: '50%', objectFit:'contain'}}></video>
                                 )
                             }
                         })
@@ -99,7 +99,7 @@ const GroupVideoModal: FC<VideoInviteModalProps> = ({ cancle, visible, localTrac
                         Object.values(remoteTracks)?.map((item, index) => {
                             return (
                                 <>
-                                    <video autoPlay playsInline src='' id={`remoteVideo${index}`} key={index} style={{width: '50%', objectFit:'contain'}}></video>
+                                    <video autoPlay playsInline src='' id={`remoteVideo${index}`} key={index} style={{maxWidth: '50%', maxHeight: '50%', objectFit:'contain'}}></video>
                                 </>
                             )
                         })
